@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stillo — European Football Predictions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0E1512;
+    --surface: #162019;
+    --surface-2: #1B271F;
+    --line: #263329;
+    --gold: #D4B106;
+    --gold-dim: #8C7A1F;
+    --sage: #6C8F7A;
+    --text: #F2F0E8;
+    --text-muted: #93A198;
+    --red-side: #B0553F;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap{
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 20px 80px;
+  }
+  header{
+    margin-bottom: 40px;
+  }
+  .brand{
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 2.4rem;
+    letter-spacing: 0.5px;
+    margin: 0;
+  }
+  .brand span{ color: var(--gold); }
+  header p{
+    color: var(--text-muted);
+    margin: 8px 0 0;
+    max-width: 46ch;
+    font-size: 0.98rem;
+  }
+  nav{
+    display:flex;
+    gap: 18px;
+    margin-top: 28px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0;
+  }
+  nav button{
+    background:none;
+    border:none;
+    color: var(--text-muted);
+    font-family:'Inter', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 500;
+    padding: 10px 2px 12px;
+    cursor:pointer;
+    border-bottom: 2px solid transparent;
+  }
+  nav button.active{
+    color: var(--text);
+    border-bottom-color: var(--gold);
+  }
+  .league-block{ margin-top: 38px; }
+  .league-head{
+    display:flex;
+    align-items baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .league-head h2{
+    font-family:'Oswald', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+  }
+  .league-head span{
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+  .match{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--sage);
+    border-radius: 6px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: rise 0.5s ease forwards;
+  }
+  .match.fav-strong{ border-left-color: var(--gold); }
+  .match:nth-child(1){ animation-delay: 0.02s; }
+  .match:nth-child(2){ animation-delay: 0.10s; }
+  @keyframes rise{ to{ opacity:1; transform: translateY(0); } }
+
+  .match-top{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .teams{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family:'Oswald', sans-serif;
+    font-size: 1.12rem;
+    font-weight: 500;
+    margin-bottom: 12px;
+    gap: 10px;
+  }
+  .teams .vs{
+    color: var(--text-muted);
+    font-family:'Inter', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 400;
+  }
+  .bar{
+    display:flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--surface-2);
+    margin-bottom: 8px;
+  }
+  .bar div{ height: 100%; }
+  .seg-home{ background: var(--gold); }
+  .seg-draw{ background: var(--sage); }
+  .seg-away{ background: var(--red-side); }
+
+  .pct-row{
+    display:flex;
+    justify-content: space-between;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .pct-row strong{ color: var(--text); font-weight: 500; }
+
+  .meta-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .pick-line{ font-size: 0.85rem; }
+  .pick-line .label{ color: var(--text-muted); margin-right: 6px; }
+  .btts{
+    font-size: 0.78rem;
+    padding: 3px 9px;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .your-call{
+    margin-top: 12px;
+  }
+  .your-call label{
+    display:block;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .your-call input{
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 9px 10px;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.88rem;
+  }
+  .your-call input:focus{
+    outline: none;
+    border-color: var(--gold-dim);
+  }
+  .your-call input::placeholder{ color: #5C6A61; }
+  .stillo-pick-text{
+    background: var(--surface-2);
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    padding: 9px 10px;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.88rem;
+  }
+
+  .vip{
+    margin-top: 48px;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 22px 20px;
+    display:flex;
+    align-items:center;
+    gap: 16px;
+  }
+  .vip .lock{
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .vip h3{
+    margin: 0 0 4px;
+    font-family:'Oswald', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .vip p{
+    margin: 0 0 12px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .vip-btn{
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 9px 16px;
+    border-radius: 5px;
+    cursor: not-allowed;
+  }
+  footer{
+    margin-top: 40px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1 class="brand">Stillo<span>Picks</span></h1>
+    <p>Predictions for Europe's top leagues — built from team form, real bookmaker odds, and picks from the people who run this site.</p>
+  </header>
+
+  <div id="matches-container">
+    <p style="color:var(--text-muted); font-size:0.9rem;">Loading matches…</p>
+  </div>
+
+  <div class="vip">
+    <div class="lock">🔒</div>
+    <div>
+      <h3>VIP picks — coming later</h3>
+      <p>Once the free predictions have a proven track record, a paid tier unlocks deeper analysis and higher-confidence calls, unlocked through PayPal. The button below is just a placeholder — no real payment is connected yet.</p>
+      <button class="vip-btn" disabled>Unlock with PayPal — coming soon</button>
+    </div>
+  </div>
+
+  <footer>
+    Matches are pulled live from the Stillo database. Your call boxes aren't saved yet — that's next.
+  </footer>
+
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://cqvvomsmhtbymctlmamk.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_lSpBd72V5H3c0ve6gRPZOg_a-mnwkds';
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const d = document.createElement('div');
+    d.textContent = String(str);
+    return d.innerHTML;
+  }
+
+  function formatKickoff(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+      });
+    } catch (e) { return iso; }
+  }
+
+  function buildMatchCard(m) {
+    const home = Number(m.home_win_pct) || 0;
+    const draw = Number(m.draw_pct) || 0;
+    const away = Number(m.away_win_pct) || 0;
+    const strong = Math.max(home, draw, away) >= 65 ? ' fav-strong' : '';
+    const bttsPct = m.btts_pct != null ? Number(m.btts_pct) : null;
+    const bttsLabel = bttsPct != null ? `BTTS: ${bttsPct >= 50 ? 'Yes' : 'No'} · ${bttsPct}%` : 'BTTS: —';
+
+    return `
+      <div class="match${strong}">
+        <div class="match-top"><span>${escapeHtml(formatKickoff(m.kickoff_time))}</span><span>${escapeHtml(m.model_pick || '')}</span></div>
+        <div class="teams"><span>${escapeHtml(m.home_team)}</span><span class="vs">vs</span><span>${escapeHtml(m.away_team)}</span></div>
+        <div class="bar"><div class="seg-home" style="width:${home}%"></div><div class="seg-draw" style="width:${draw}%"></div><div class="seg-away" style="width:${away}%"></div></div>
+        <div class="pct-row"><span>${escapeHtml(m.home_team)} <strong>${Math.round(home)}%</strong></span><span>Draw <strong>${Math.round(draw)}%</strong></span><span>${escapeHtml(m.away_team)} <strong>${Math.round(away)}%</strong></span></div>
+        <div class="meta-row">
+          <div class="pick-line"><span class="label">Outcome</span>${escapeHtml(m.model_pick || '—')}</div>
+          <div class="btts">${escapeHtml(bttsLabel)}</div>
+        </div>
+        ${m.stillo_pick ? `
+        <div class="your-call">
+          <label>Stillo's call</label>
+          <div class="stillo-pick-text">${escapeHtml(m.stillo_pick)}</div>
+        </div>` : ''}
+      </div>
+    `;
+  }
+
+  async function loadMatches() {
+    const container = document.getElementById('matches-container');
+    try {
+      const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/matches?select=*&kickoff_time=gte.${encodeURIComponent(cutoff)}&order=kickoff_time.asc`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+      );
+      if (!res.ok) throw new Error('Request failed: ' + res.status);
+      const matches = await res.json();
+
+      if (!matches.length) {
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No matches in the database yet.</p>';
+        return;
+      }
+
+      const byLeague = {};
+      matches.forEach(m => {
+        if (!byLeague[m.league]) byLeague[m.league] = [];
+        byLeague[m.league].push(m);
+      });
+
+      container.innerHTML = Object.keys(byLeague).map(league => `
+        <div class="league-block">
+          <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
+          ${byLeague[league].map(buildMatchCard).join('')}
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Could not load matches right now. Check the database connection.</p>';
+      console.error(err);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadMatches);
+</script>
+</body>
+</html>
