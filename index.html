@@ -161,13 +161,30 @@
   }
   .pick-line{ font-size: 0.85rem; }
   .pick-line .label{ color: var(--text-muted); margin-right: 6px; }
-  .btts{
-    font-size: 0.78rem;
-    padding: 3px 9px;
+  .strong-tag{
+    color: var(--gold);
+    font-size: 0.74rem;
+    font-weight: 500;
+    margin-left: 6px;
+  }
+  .badges{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .badge{
+    font-size: 0.76rem;
+    padding: 4px 10px;
     border-radius: 20px;
     border: 1px solid var(--line);
     color: var(--text-muted);
     white-space: nowrap;
+  }
+  .badge.strong{
+    border-color: var(--gold-dim);
+    color: var(--gold);
+    background: rgba(212, 177, 6, 0.08);
   }
   .your-call{
     margin-top: 12px;
@@ -254,7 +271,7 @@
 
   <header>
     <h1 class="brand">Stillo<span>Picks</span></h1>
-    <p>Predictions for Europe's top leagues — built from team form, real bookmaker odds, and picks from the people who run this site.</p>
+    <p>Our top 5 highest-confidence picks — every market shown is backed by a 60%+ model confidence.</p>
   </header>
 
   <div id="matches-container">
@@ -296,13 +313,43 @@
     } catch (e) { return iso; }
   }
 
+  function marketConfidence(m) {
+    const vals = [];
+    const home = Number(m.home_win_pct) || 0;
+    const draw = Number(m.draw_pct) || 0;
+    const away = Number(m.away_win_pct) || 0;
+    vals.push(Math.max(home, draw, away));
+    if (m.btts_pct != null) { const b = Number(m.btts_pct); vals.push(Math.max(b, 100 - b)); }
+    if (m.over_1_5_pct != null) { const o = Number(m.over_1_5_pct); vals.push(Math.max(o, 100 - o)); }
+    if (m.over_2_5_pct != null) { const o = Number(m.over_2_5_pct); vals.push(Math.max(o, 100 - o)); }
+    return vals.length ? Math.max(...vals) : 0;
+  }
+
   function buildMatchCard(m) {
     const home = Number(m.home_win_pct) || 0;
     const draw = Number(m.draw_pct) || 0;
     const away = Number(m.away_win_pct) || 0;
-    const strong = Math.max(home, draw, away) >= 65 ? ' fav-strong' : '';
+    const maxOutcome = Math.max(home, draw, away);
+    const strong = maxOutcome >= 60 ? ' fav-strong' : '';
+    const outcomeStrongTag = maxOutcome >= 60 ? ' <span class="strong-tag">🔥 Strong</span>' : '';
+
     const bttsPct = m.btts_pct != null ? Number(m.btts_pct) : null;
-    const bttsLabel = bttsPct != null ? `BTTS: ${bttsPct >= 50 ? 'Yes' : 'No'} · ${bttsPct}%` : 'BTTS: —';
+    const bttsSide = bttsPct != null ? (bttsPct >= 50 ? 'Yes' : 'No') : null;
+    const bttsConf = bttsPct != null ? (bttsPct >= 50 ? bttsPct : 100 - bttsPct) : null;
+    const bttsLabel = bttsConf != null ? `BTTS: ${bttsSide} · ${Math.round(bttsConf)}%` : 'BTTS: —';
+    const bttsStrong = bttsConf != null && bttsConf >= 60;
+
+    const o15Pct = m.over_1_5_pct != null ? Number(m.over_1_5_pct) : null;
+    const o15Side = o15Pct != null ? (o15Pct >= 50 ? 'Over' : 'Under') : null;
+    const o15Conf = o15Pct != null ? (o15Pct >= 50 ? o15Pct : 100 - o15Pct) : null;
+    const o15Label = o15Conf != null ? `${o15Side} 1.5 · ${Math.round(o15Conf)}%` : 'O/U 1.5: —';
+    const o15Strong = o15Conf != null && o15Conf >= 60;
+
+    const o25Pct = m.over_2_5_pct != null ? Number(m.over_2_5_pct) : null;
+    const o25Side = o25Pct != null ? (o25Pct >= 50 ? 'Over' : 'Under') : null;
+    const o25Conf = o25Pct != null ? (o25Pct >= 50 ? o25Pct : 100 - o25Pct) : null;
+    const o25Label = o25Conf != null ? `${o25Side} 2.5 · ${Math.round(o25Conf)}%` : 'O/U 2.5: —';
+    const o25Strong = o25Conf != null && o25Conf >= 60;
 
     return `
       <div class="match${strong}">
@@ -311,8 +358,13 @@
         <div class="bar"><div class="seg-home" style="width:${home}%"></div><div class="seg-draw" style="width:${draw}%"></div><div class="seg-away" style="width:${away}%"></div></div>
         <div class="pct-row"><span>${escapeHtml(m.home_team)} <strong>${Math.round(home)}%</strong></span><span>Draw <strong>${Math.round(draw)}%</strong></span><span>${escapeHtml(m.away_team)} <strong>${Math.round(away)}%</strong></span></div>
         <div class="meta-row">
-          <div class="pick-line"><span class="label">Outcome</span>${escapeHtml(m.model_pick || '—')}</div>
-          <div class="btts">${escapeHtml(bttsLabel)}</div>
+          <div class="pick-line"><span class="label">Outcome</span>${escapeHtml(m.model_pick || '—')}${outcomeStrongTag}</div>
+        </div>
+        <div class="badges">
+          <div class="badge${bttsStrong ? ' strong' : ''}">${escapeHtml(bttsLabel)}</div>
+          <div class="badge${o15Strong ? ' strong' : ''}">${escapeHtml(o15Label)}</div>
+          <div class="badge${o25Strong ? ' strong' : ''}">${escapeHtml(o25Label)}</div>
+          ${m.correct_score_pick ? `<div class="badge">Score: ${escapeHtml(m.correct_score_pick)}</div>` : ''}
         </div>
         ${m.stillo_pick ? `
         <div class="your-call">
@@ -332,10 +384,12 @@
         { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
       );
       if (!res.ok) throw new Error('Request failed: ' + res.status);
-      const matches = await res.json();
+      const allMatches = await res.json();
+
+      const matches = allMatches.filter(m => marketConfidence(m) >= 60).slice(0, 5);
 
       if (!matches.length) {
-        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No matches in the database yet.</p>';
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No high-confidence picks (60%+) right now — check back soon.</p>';
         return;
       }
 
