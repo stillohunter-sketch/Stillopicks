@@ -55,7 +55,11 @@
     margin-top: 28px;
     border-bottom: 1px solid var(--line);
     padding-bottom: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  nav::-webkit-scrollbar{ display:none; }
   nav button{
     background:none;
     border:none;
@@ -66,6 +70,8 @@
     padding: 10px 2px 12px;
     cursor:pointer;
     border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   nav button.active{
     color: var(--text);
@@ -274,6 +280,16 @@
     <p>Our top 5 highest-confidence picks — every market shown is backed by a 60%+ model confidence.</p>
   </header>
 
+  <nav id="tab-bar">
+    <button class="active" data-tab="sure">Sure Bets</button>
+    <button data-tab="wdw">WDW (1X2)</button>
+    <button data-tab="btts">BTTS</button>
+    <button data-tab="ou">Over/Under</button>
+    <button data-tab="score">Correct Score</button>
+    <button data-tab="accas">Accas</button>
+    <button data-tab="news">News</button>
+  </nav>
+
   <div id="matches-container">
     <p style="color:var(--text-muted); font-size:0.9rem;">Loading matches…</p>
   </div>
@@ -375,6 +391,69 @@
     `;
   }
 
+  function outcomeConfidence(m) {
+    const home = Number(m.home_win_pct) || 0;
+    const draw = Number(m.draw_pct) || 0;
+    const away = Number(m.away_win_pct) || 0;
+    return Math.max(home, draw, away);
+  }
+
+  function bttsConfidence(m) {
+    if (m.btts_pct == null) return 0;
+    const b = Number(m.btts_pct);
+    return Math.max(b, 100 - b);
+  }
+
+  function overUnderConfidence(m) {
+    const vals = [];
+    if (m.over_1_5_pct != null) { const o = Number(m.over_1_5_pct); vals.push(Math.max(o, 100 - o)); }
+    if (m.over_2_5_pct != null) { const o = Number(m.over_2_5_pct); vals.push(Math.max(o, 100 - o)); }
+    return vals.length ? Math.max(...vals) : 0;
+  }
+
+  const TABS = {
+    sure: { filter: m => marketConfidence(m) >= 60, sort: (a, b) => marketConfidence(b) - marketConfidence(a), empty: 'No high-confidence picks (60%+) right now — check back soon.' },
+    wdw: { filter: m => outcomeConfidence(m) >= 60, sort: (a, b) => outcomeConfidence(b) - outcomeConfidence(a), empty: 'No strong 1X2 picks (60%+) right now.' },
+    btts: { filter: m => bttsConfidence(m) >= 60, sort: (a, b) => bttsConfidence(b) - bttsConfidence(a), empty: 'No strong BTTS picks (60%+) right now.' },
+    ou: { filter: m => overUnderConfidence(m) >= 60, sort: (a, b) => overUnderConfidence(b) - overUnderConfidence(a), empty: 'No strong Over/Under picks (60%+) right now.' },
+    score: { filter: m => !!m.correct_score_pick, sort: (a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time), empty: 'No correct-score picks available right now.' },
+  };
+
+  let allMatches = [];
+
+  function renderTab(key) {
+    const container = document.getElementById('matches-container');
+    document.querySelectorAll('#tab-bar button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === key);
+    });
+
+    if (key === 'accas' || key === 'news') {
+      container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Coming soon — not built yet.</p>';
+      return;
+    }
+
+    const tab = TABS[key];
+    const matches = allMatches.filter(tab.filter).sort(tab.sort).slice(0, 5);
+
+    if (!matches.length) {
+      container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${tab.empty}</p>`;
+      return;
+    }
+
+    const byLeague = {};
+    matches.forEach(m => {
+      if (!byLeague[m.league]) byLeague[m.league] = [];
+      byLeague[m.league].push(m);
+    });
+
+    container.innerHTML = Object.keys(byLeague).map(league => `
+      <div class="league-block">
+        <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
+        ${byLeague[league].map(buildMatchCard).join('')}
+      </div>
+    `).join('');
+  }
+
   async function loadMatches() {
     const container = document.getElementById('matches-container');
     try {
@@ -384,32 +463,17 @@
         { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
       );
       if (!res.ok) throw new Error('Request failed: ' + res.status);
-      const allMatches = await res.json();
-
-      const matches = allMatches.filter(m => marketConfidence(m) >= 60).slice(0, 5);
-
-      if (!matches.length) {
-        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No high-confidence picks (60%+) right now — check back soon.</p>';
-        return;
-      }
-
-      const byLeague = {};
-      matches.forEach(m => {
-        if (!byLeague[m.league]) byLeague[m.league] = [];
-        byLeague[m.league].push(m);
-      });
-
-      container.innerHTML = Object.keys(byLeague).map(league => `
-        <div class="league-block">
-          <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
-          ${byLeague[league].map(buildMatchCard).join('')}
-        </div>
-      `).join('');
+      allMatches = await res.json();
+      renderTab('sure');
     } catch (err) {
       container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Could not load matches right now. Check the database connection.</p>';
       console.error(err);
     }
   }
+
+  document.querySelectorAll('#tab-bar button').forEach(btn => {
+    btn.addEventListener('click', () => renderTab(btn.dataset.tab));
+  });
 
   document.addEventListener('DOMContentLoaded', loadMatches);
 </script>
