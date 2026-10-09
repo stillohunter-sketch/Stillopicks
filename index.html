@@ -100,8 +100,8 @@
     border: 1px solid var(--line);
     border-left: 3px solid var(--sage);
     border-radius: 6px;
-    padding: 16px 18px;
-    margin-bottom: 12px;
+    padding: 18px 18px 20px;
+    margin-bottom: 16px;
     opacity: 0;
     transform: translateY(6px);
     animation: rise 0.5s ease forwards;
@@ -174,24 +174,37 @@
     margin-left: 6px;
   }
   .badges{
-    display:flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 16px;
   }
   .badge{
-    font-size: 0.76rem;
-    padding: 4px 10px;
-    border-radius: 20px;
+    background: var(--surface-2);
     border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
     color: var(--text-muted);
-    white-space: nowrap;
+  }
+  .badge-label{
+    display:block;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.75;
+    margin-bottom: 4px;
+  }
+  .badge-value{
+    display:block;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text);
   }
   .badge.strong{
     border-color: var(--gold-dim);
-    color: var(--gold);
-    background: rgba(212, 177, 6, 0.08);
+    background: rgba(212, 177, 6, 0.1);
   }
+  .badge.strong .badge-value{ color: var(--gold); }
   .your-call{
     margin-top: 12px;
   }
@@ -377,10 +390,10 @@
           <div class="pick-line"><span class="label">Outcome</span>${escapeHtml(m.model_pick || '—')}${outcomeStrongTag}</div>
         </div>
         <div class="badges">
-          <div class="badge${bttsStrong ? ' strong' : ''}">${escapeHtml(bttsLabel)}</div>
-          <div class="badge${o15Strong ? ' strong' : ''}">${escapeHtml(o15Label)}</div>
-          <div class="badge${o25Strong ? ' strong' : ''}">${escapeHtml(o25Label)}</div>
-          ${m.correct_score_pick ? `<div class="badge">Score: ${escapeHtml(m.correct_score_pick)}</div>` : ''}
+          <div class="badge${bttsStrong ? ' strong' : ''}"><span class="badge-label">BTTS</span><span class="badge-value">${escapeHtml(bttsSide ?? '—')} · ${bttsConf != null ? Math.round(bttsConf) + '%' : '—'}</span></div>
+          <div class="badge${o15Strong ? ' strong' : ''}"><span class="badge-label">Goals O/U 1.5</span><span class="badge-value">${escapeHtml(o15Side ?? '—')} · ${o15Conf != null ? Math.round(o15Conf) + '%' : '—'}</span></div>
+          <div class="badge${o25Strong ? ' strong' : ''}"><span class="badge-label">Goals O/U 2.5</span><span class="badge-value">${escapeHtml(o25Side ?? '—')} · ${o25Conf != null ? Math.round(o25Conf) + '%' : '—'}</span></div>
+          ${m.correct_score_pick ? `<div class="badge"><span class="badge-label">Correct Score</span><span class="badge-value">${escapeHtml(m.correct_score_pick)}</span></div>` : ''}
         </div>
         ${m.stillo_pick ? `
         <div class="your-call">
