@@ -9,6 +9,7 @@ const CACHE_MIN = Number(process.env.ODDS_CACHE_MIN) || 480;                  //
 const ODDS_CACHE_MS = CACHE_MIN * 60 * 1000;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cqvvomsmhtbymctlmamk.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_lSpBd72V5H3c0ve6gRPZOg_a-mnwkds';
+const MAX_BATCHES = Number(process.env.ODDS_MAX_BATCHES) || 1;                 // each batch = 5 leagues = 1 request
 const FIXTURE_CACHE_MS = 24 * 60 * 60 * 1000;                                  // how long fixture list is reused
 
 const cache = { fixtures: null, fixturesAt: 0, odds: {} };
@@ -140,12 +141,21 @@ module.exports = async (req, res) => {
       if (f) found[m.key] = f;
     });
 
-    const tournamentIds = [...new Set(Object.values(found).map(f => f.tournamentId).filter(Boolean))];
-    const out = { odds: {}, bookmaker: BOOKMAKER, matched: Object.keys(found).length, total: matches.length };
+    // OddsPapi accepts at most 5 tournaments per odds request, so take the leagues with the most of our matches.
+    const counts = {};
+    Object.values(found).forEach(f => { if (f.tournamentId) counts[f.tournamentId] = (counts[f.tournamentId] || 0) + 1; });
+    const ranked = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 5 * MAX_BATCHES);
+    const out = { odds: {}, bookmaker: BOOKMAKER, matched: Object.keys(found).length, total: matches.length,
+                  leaguesCovered: ranked.length, leaguesTotal: Object.keys(counts).length };
 
-    if (tournamentIds.length) {
-      const { at, byFixture } = await getOddsFor(key, tournamentIds);
-      out.updatedAt = at;
+    if (ranked.length) {
+      const byFixture = {};
+      for (let i = 0; i < ranked.length; i += 5) {
+        if (i > 0) await new Promise(r => setTimeout(r, 1100)); // OddsPapi allows one call per second
+        const part = await getOddsFor(key, ranked.slice(i, i + 5));
+        Object.assign(byFixture, part.byFixture);
+        out.updatedAt = Math.min(out.updatedAt || part.at, part.at);
+      }
       Object.entries(found).forEach(([k, f]) => {
         const o = extract(byFixture[f.fixtureId]);
         if (o) out.odds[k] = o;
@@ -154,7 +164,7 @@ module.exports = async (req, res) => {
         const firstKey = Object.keys(found)[0];
         const fx = firstKey && byFixture[found[firstKey].fixtureId];
         const mk = fx && fx.bookmakerOdds && fx.bookmakerOdds[BOOKMAKER] && fx.bookmakerOdds[BOOKMAKER].markets;
-        out.debug = { tournamentIds, sample: firstKey, markets: mk ? Object.fromEntries(Object.entries(mk).map(([id, m]) =>
+        out.debug = { tournamentIds: ranked, sample: firstKey, markets: mk ? Object.fromEntries(Object.entries(mk).map(([id, m]) =>
           [id, Object.fromEntries(Object.entries(m.outcomes || {}).map(([oid, v]) => [oid, v.players && v.players['0'] && v.players['0'].price]))])) : null,
           fixtureSample: fixtures[0] };
       }
