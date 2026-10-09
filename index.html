@@ -609,6 +609,29 @@
     } catch (e) { console.warn('Odds unavailable', e); }
   }
 
+  // Sure Bets: one market per match (60%+), spread across 1X2 / BTTS / Over-Under so the list isn't all overs.
+  function assignSurePicks(matches) {
+    const cands = [];
+    matches.filter(m => m.kickoff_time).forEach(m => {
+      const best = {}; // best qualifying pick per market type
+      [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].forEach(p => {
+        if (!best[p.type] || p.conf > best[p.type].conf) best[p.type] = p;
+      });
+      const options = Object.values(best);
+      if (options.length) cands.push({ m, options });
+    });
+    // matches with the fewest options choose first, so flexible matches can balance things out
+    cands.sort((a, b) => a.options.length - b.options.length || new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
+    const counts = { '1X2': 0, 'BTTS': 0, 'OU': 0 };
+    const result = new Map();
+    cands.forEach(({ m, options }) => {
+      options.sort((a, b) => counts[a.type] - counts[b.type] || b.conf - a.conf);
+      result.set(m, options[0]);
+      counts[options[0].type]++;
+    });
+    return result;
+  }
+
   let allMatches = [];
 
   function renderTab(key) {
