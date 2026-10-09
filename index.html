@@ -302,6 +302,48 @@
     border-radius: 5px;
     cursor: not-allowed;
   }
+
+  /* ---- Date-grouped compact rows ---- */
+  .day-head{
+    display:flex; align-items: baseline; justify-content: space-between;
+    margin: 30px 0 10px;
+  }
+  .day-head:first-child{ margin-top: 22px; }
+  .day-head h2{
+    font-family:'Oswald', sans-serif; font-size: 1rem; font-weight: 600; margin: 0;
+    color: var(--gold); letter-spacing: 0.3px; text-transform: uppercase;
+  }
+  .day-head span{ color: var(--text-muted); font-size: 0.78rem; }
+  .day-list{
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  }
+  .sub-head{
+    display:flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sage);
+  }
+  .sub-head span{ font-weight: 400; color: var(--text-muted); letter-spacing: 0; text-transform: none; }
+  .day-list .row:last-child{ border-bottom: none; }
+  .row{
+    display:flex; align-items:center; justify-content: space-between; gap: 14px;
+    padding: 12px 14px; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child{ border-bottom: none; }
+  .row-left{ min-width: 0; flex: 1; }
+  .row-meta{ font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
+  .row-meta b{ color: var(--text); font-weight: 500; margin-right: 6px; }
+  .row-teams{
+    font-family:'Oswald', sans-serif; font-weight: 500; font-size: 0.98rem; line-height: 1.3;
+  }
+  .row-teams div{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-picks{ display:flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+  .pill{
+    display:inline-flex; align-items: baseline; gap: 6px;
+    background: rgba(212,177,6,0.1); border: 1px solid var(--gold-dim); border-radius: 5px;
+    padding: 4px 9px; font-size: 0.8rem; font-weight: 600; color: var(--gold); white-space: nowrap;
+  }
+  .pill em{ font-style: normal; font-weight: 500; font-size: 0.74rem; color: var(--text-muted); }
+  .pill.score{ font-family:'Oswald', sans-serif; font-size: 1rem; padding: 3px 12px; }
   footer{
     margin-top: 40px;
     color: var(--text-muted);
@@ -314,7 +356,7 @@
 
   <header>
     <h1 class="brand">Stillo<span>Picks</span></h1>
-    <p>Our top 5 highest-confidence picks — every market shown is backed by a 60%+ model confidence.</p>
+    <p>Our highest-confidence picks, grouped by match day — every market shown is backed by a 60%+ model confidence.</p>
   </header>
 
   <nav id="tab-bar">
@@ -448,10 +490,8 @@
     return vals.length ? Math.max(...vals) : 0;
   }
 
-  // ---- Market tabs: each tab groups picks by the option itself ----
-  // picks(m) returns the list of qualifying { group, conf, label } entries for a match.
+  // ---- Tabs: every tab is grouped by date, one compact row per match ----
   const MIN_CONF = 60;
-  const PER_GROUP = 5;
 
   function twoWay(pct, yes, no) {
     if (pct == null) return null;
@@ -459,106 +499,80 @@
     return p >= 50 ? { side: yes, conf: p } : { side: no, conf: 100 - p };
   }
 
-  const MARKETS = {
-    wdw: {
-      groups: ['Home wins', 'Draws', 'Away wins'],
-      empty: 'No strong 1X2 picks (60%+) right now.',
-      picks(m) {
-        const h = Number(m.home_win_pct) || 0, d = Number(m.draw_pct) || 0, a = Number(m.away_win_pct) || 0;
-        const max = Math.max(h, d, a);
-        if (max < MIN_CONF) return [];
-        if (max === h) return [{ group: 'Home wins', conf: h, label: m.home_team + ' to win' }];
-        if (max === a) return [{ group: 'Away wins', conf: a, label: m.away_team + ' to win' }];
-        return [{ group: 'Draws', conf: d, label: 'Draw' }];
-      }
+  // Each picker returns the qualifying pills for a match: { label, conf, score? }
+  const pickers = {
+    outcome(m) {
+      const h = Number(m.home_win_pct) || 0, d = Number(m.draw_pct) || 0, a = Number(m.away_win_pct) || 0;
+      const max = Math.max(h, d, a);
+      if (max < MIN_CONF) return [];
+      return [{ label: max === h ? 'Home win' : max === a ? 'Away win' : 'Draw', conf: max }];
     },
-    btts: {
-      groups: ['BTTS: Yes', 'BTTS: No'],
-      empty: 'No strong BTTS picks (60%+) right now.',
-      picks(m) {
-        const r = twoWay(m.btts_pct, 'Yes', 'No');
-        if (!r || r.conf < MIN_CONF) return [];
-        return [{ group: 'BTTS: ' + r.side, conf: r.conf, label: 'Both teams to score: ' + r.side }];
-      }
+    btts(m) {
+      const r = twoWay(m.btts_pct, 'Yes', 'No');
+      return r && r.conf >= MIN_CONF ? [{ label: 'BTTS ' + r.side, conf: r.conf }] : [];
     },
-    ou: {
-      groups: ['Over 1.5', 'Over 2.5', 'Under 1.5', 'Under 2.5'],
-      empty: 'No strong Over/Under picks (60%+) right now.',
-      picks(m) {
-        const out = [];
-        [['1.5', m.over_1_5_pct], ['2.5', m.over_2_5_pct]].forEach(([line, pct]) => {
-          const r = twoWay(pct, 'Over', 'Under');
-          if (r && r.conf >= MIN_CONF) out.push({ group: `${r.side} ${line}`, conf: r.conf, label: `${r.side} ${line} goals` });
-        });
-        return out;
-      }
+    ou(m) {
+      const out = [];
+      [['1.5', m.over_1_5_pct], ['2.5', m.over_2_5_pct]].forEach(([line, pct]) => {
+        const r = twoWay(pct, 'Over', 'Under');
+        if (r && r.conf >= MIN_CONF) out.push({ label: `${r.side} ${line}`, conf: r.conf });
+      });
+      return out;
     },
-    score: {
-      groups: null, // built dynamically: one group per scoreline, biggest group first
-      empty: 'No correct-score picks available right now.',
-      picks(m) {
-        return m.correct_score_pick ? [{ group: String(m.correct_score_pick).trim(), conf: null, label: m.correct_score_pick }] : [];
-      }
+    score(m) {
+      return m.correct_score_pick ? [{ label: String(m.correct_score_pick).trim(), conf: null, score: true }] : [];
     }
   };
 
-  function buildPickCard(m, p, isScore) {
-    const bottom = isScore
-      ? `<div class="conf-row"><span class="score-big">${escapeHtml(p.label)}</span><span style="color:var(--text-muted)">Predicted score</span></div>`
-      : `<div class="conf-row"><span class="pill">${escapeHtml(p.label)}</span><div class="conf-bar"><div style="width:${Math.round(p.conf)}%"></div></div><strong>${Math.round(p.conf)}%</strong></div>`;
+  const TAB_PICKS = {
+    sure: m => [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].sort((a, b) => b.conf - a.conf),
+    wdw: pickers.outcome,
+    btts: pickers.btts,
+    ou: pickers.ou,
+    score: pickers.score
+  };
+  const TAB_EMPTY = {
+    sure: 'No high-confidence picks (60%+) right now — check back soon.',
+    wdw: 'No strong 1X2 picks (60%+) right now.',
+    btts: 'No strong BTTS picks (60%+) right now.',
+    ou: 'No strong Over/Under picks (60%+) right now.',
+    score: 'No correct-score picks available right now.'
+  };
+
+  function dayKey(iso) {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  function dayLabel(iso) {
+    const d = new Date(iso);
+    const today = new Date();
+    const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
+    const full = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    if (dayKey(iso) === dayKey(today.toISOString())) return 'Today · ' + full;
+    if (dayKey(iso) === dayKey(tomorrow.toISOString())) return 'Tomorrow · ' + full;
+    return full;
+  }
+
+  function timeOnly(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function buildRow(m, p) {
+    const pill = p.score
+      ? `<span class="pill score">${escapeHtml(p.label)}</span>`
+      : `<span class="pill">${Math.round(p.conf)}%</span>`;
     return `
-      <div class="match pick-card fav-strong">
-        <div class="match-top"><span>${escapeHtml(formatKickoff(m.kickoff_time))}</span><span>${escapeHtml(m.league || '')}</span></div>
-        <div class="teams"><span>${escapeHtml(m.home_team)}</span><span class="vs">vs</span><span>${escapeHtml(m.away_team)}</span></div>
-        ${bottom}
+      <div class="row">
+        <div class="row-left">
+          <div class="row-meta"><b>${escapeHtml(timeOnly(m.kickoff_time))}</b>${escapeHtml(m.league || '')}</div>
+          <div class="row-teams"><div>${escapeHtml(m.home_team)}</div><div>${escapeHtml(m.away_team)}</div></div>
+        </div>
+        <div class="row-picks">${pill}</div>
       </div>`;
   }
 
-  function renderMarket(key, container) {
-    const market = MARKETS[key];
-    const isScore = key === 'score';
-    const buckets = {};
-    allMatches.forEach(m => {
-      market.picks(m).forEach(p => {
-        (buckets[p.group] = buckets[p.group] || []).push({ m, p });
-      });
-    });
-
-    let order = market.groups ? market.groups.filter(g => buckets[g]) : Object.keys(buckets).sort((a, b) => buckets[b].length - buckets[a].length);
-    if (!order.length) {
-      container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${market.empty}</p>`;
-      return;
-    }
-
-    container.innerHTML = order.map(g => {
-      const items = buckets[g].sort(isScore
-        ? (a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time)
-        : (a, b) => b.p.conf - a.p.conf
-      ).slice(0, PER_GROUP);
-      return `
-        <div class="group-head"><h2>${escapeHtml(g)}</h2><span>${items.length} pick${items.length === 1 ? '' : 's'}</span></div>
-        ${items.map(({ m, p }) => buildPickCard(m, p, isScore)).join('')}`;
-    }).join('');
-  }
-
-  function renderSure(container) {
-    const matches = allMatches
-      .filter(m => marketConfidence(m) >= MIN_CONF)
-      .sort((a, b) => marketConfidence(b) - marketConfidence(a))
-      .slice(0, 5);
-    if (!matches.length) {
-      container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No high-confidence picks (60%+) right now — check back soon.</p>';
-      return;
-    }
-    const byLeague = {};
-    matches.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
-    container.innerHTML = Object.keys(byLeague).map(league => `
-      <div class="league-block">
-        <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
-        ${byLeague[league].map(buildMatchCard).join('')}
-      </div>
-    `).join('');
-  }
+  const OPTION_ORDER = ['Home win', 'Draw', 'Away win', 'BTTS Yes', 'BTTS No', 'Over 1.5', 'Over 2.5', 'Under 1.5', 'Under 2.5'];
 
   let allMatches = [];
 
@@ -570,11 +584,46 @@
 
     if (key === 'accas' || key === 'news') {
       container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Coming soon — not built yet.</p>';
-    } else if (key === 'sure') {
-      renderSure(container);
-    } else {
-      renderMarket(key, container);
+      return;
     }
+
+    // One entry per (match, pick) so every option can be grouped on its own
+    const entries = [];
+    allMatches.filter(m => m.kickoff_time).forEach(m => {
+      TAB_PICKS[key](m).forEach(p => entries.push({ m, p }));
+    });
+    entries.sort((a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
+
+    if (!entries.length) {
+      container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${TAB_EMPTY[key]}</p>`;
+      return;
+    }
+
+    // Date -> option -> matches
+    const days = [];
+    entries.forEach(e => {
+      const k = dayKey(e.m.kickoff_time);
+      let day = days.find(d => d.k === k);
+      if (!day) { day = { k, label: dayLabel(e.m.kickoff_time), options: {}, count: 0 }; days.push(day); }
+      (day.options[e.p.label] = day.options[e.p.label] || []).push(e);
+      day.count++;
+    });
+
+    container.innerHTML = days.map(d => {
+      const labels = Object.keys(d.options).sort((a, b) => {
+        const ia = OPTION_ORDER.indexOf(a), ib = OPTION_ORDER.indexOf(b);
+        if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        return d.options[b].length - d.options[a].length || a.localeCompare(b); // scorelines: biggest group first
+      });
+      return `
+        <div class="day-head"><h2>${escapeHtml(d.label)}</h2><span>${d.count} pick${d.count === 1 ? '' : 's'}</span></div>
+        <div class="day-list">
+          ${labels.map(l => `
+            <div class="sub-head">${escapeHtml(l)}<span>${d.options[l].length}</span></div>
+            ${d.options[l].map(e => buildRow(e.m, e.p)).join('')}
+          `).join('')}
+        </div>`;
+    }).join('');
   }
 
   async function loadMatches() {
