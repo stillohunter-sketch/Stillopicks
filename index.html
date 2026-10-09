@@ -558,21 +558,20 @@
     return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
-  function buildRow(m, p) {
-    const pill = p.score
+  function buildRow(m, picks) {
+    const pills = picks.map(p => p.score
       ? `<span class="pill score">${escapeHtml(p.label)}</span>`
-      : `<span class="pill">${Math.round(p.conf)}%</span>`;
+      : `<span class="pill">${escapeHtml(p.label)} <em>${Math.round(p.conf)}%</em></span>`
+    ).join('');
     return `
       <div class="row">
         <div class="row-left">
           <div class="row-meta"><b>${escapeHtml(timeOnly(m.kickoff_time))}</b>${escapeHtml(m.league || '')}</div>
           <div class="row-teams"><div>${escapeHtml(m.home_team)}</div><div>${escapeHtml(m.away_team)}</div></div>
         </div>
-        <div class="row-picks">${pill}</div>
+        <div class="row-picks">${pills}</div>
       </div>`;
   }
-
-  const OPTION_ORDER = ['Home win', 'Draw', 'Away win', 'BTTS Yes', 'BTTS No', 'Over 1.5', 'Over 2.5', 'Under 1.5', 'Under 2.5'];
 
   let allMatches = [];
 
@@ -587,43 +586,30 @@
       return;
     }
 
-    // One entry per (match, pick) so every option can be grouped on its own
-    const entries = [];
-    allMatches.filter(m => m.kickoff_time).forEach(m => {
-      TAB_PICKS[key](m).forEach(p => entries.push({ m, p }));
-    });
-    entries.sort((a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
+    // One entry per match, so every match appears once under its date
+    const entries = allMatches
+      .filter(m => m.kickoff_time)
+      .map(m => ({ m, picks: TAB_PICKS[key](m) }))
+      .filter(e => e.picks.length)
+      .sort((a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
 
     if (!entries.length) {
       container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${TAB_EMPTY[key]}</p>`;
       return;
     }
 
-    // Date -> option -> matches
     const days = [];
     entries.forEach(e => {
       const k = dayKey(e.m.kickoff_time);
       let day = days.find(d => d.k === k);
-      if (!day) { day = { k, label: dayLabel(e.m.kickoff_time), options: {}, count: 0 }; days.push(day); }
-      (day.options[e.p.label] = day.options[e.p.label] || []).push(e);
-      day.count++;
+      if (!day) { day = { k, label: dayLabel(e.m.kickoff_time), items: [] }; days.push(day); }
+      day.items.push(e);
     });
 
-    container.innerHTML = days.map(d => {
-      const labels = Object.keys(d.options).sort((a, b) => {
-        const ia = OPTION_ORDER.indexOf(a), ib = OPTION_ORDER.indexOf(b);
-        if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-        return d.options[b].length - d.options[a].length || a.localeCompare(b); // scorelines: biggest group first
-      });
-      return `
-        <div class="day-head"><h2>${escapeHtml(d.label)}</h2><span>${d.count} pick${d.count === 1 ? '' : 's'}</span></div>
-        <div class="day-list">
-          ${labels.map(l => `
-            <div class="sub-head">${escapeHtml(l)}<span>${d.options[l].length}</span></div>
-            ${d.options[l].map(e => buildRow(e.m, e.p)).join('')}
-          `).join('')}
-        </div>`;
-    }).join('');
+    container.innerHTML = days.map(d => `
+      <div class="day-head"><h2>${escapeHtml(d.label)}</h2><span>${d.items.length} match${d.items.length === 1 ? '' : 'es'}</span></div>
+      <div class="day-list">${d.items.map(e => buildRow(e.m, e.picks)).join('')}</div>
+    `).join('');
   }
 
   async function loadMatches() {
