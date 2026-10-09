@@ -525,7 +525,7 @@
   };
 
   const TAB_PICKS = {
-    sure: m => [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].sort((a, b) => b.conf - a.conf),
+    sure: m => [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].sort((a, b) => b.conf - a.conf).slice(0, 1),
     wdw: pickers.outcome,
     btts: pickers.btts,
     ou: pickers.ou,
