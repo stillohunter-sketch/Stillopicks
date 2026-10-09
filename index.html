@@ -505,17 +505,17 @@
       const h = Number(m.home_win_pct) || 0, d = Number(m.draw_pct) || 0, a = Number(m.away_win_pct) || 0;
       const max = Math.max(h, d, a);
       if (max < MIN_CONF) return [];
-      return [{ label: max === h ? 'Home win' : max === a ? 'Away win' : 'Draw', conf: max }];
+      return [{ type: '1X2', label: max === h ? 'Home win' : max === a ? 'Away win' : 'Draw', conf: max }];
     },
     btts(m) {
       const r = twoWay(m.btts_pct, 'Yes', 'No');
-      return r && r.conf >= MIN_CONF ? [{ label: 'BTTS ' + r.side, conf: r.conf }] : [];
+      return r && r.conf >= MIN_CONF ? [{ type: 'BTTS', label: 'BTTS ' + r.side, conf: r.conf }] : [];
     },
     ou(m) {
       const out = [];
       [['1.5', m.over_1_5_pct], ['2.5', m.over_2_5_pct]].forEach(([line, pct]) => {
         const r = twoWay(pct, 'Over', 'Under');
-        if (r && r.conf >= MIN_CONF) out.push({ label: `${r.side} ${line}`, conf: r.conf });
+        if (r && r.conf >= MIN_CONF) out.push({ type: 'OU', label: `${r.side} ${line}`, conf: r.conf });
       });
       return out;
     },
@@ -573,6 +573,29 @@
       </div>`;
   }
 
+  // Sure Bets: one market per match (60%+), spread across 1X2 / BTTS / Over-Under so the list isn't all overs.
+  function assignSurePicks(matches) {
+    const cands = [];
+    matches.filter(m => m.kickoff_time).forEach(m => {
+      const best = {}; // best qualifying pick per market type
+      [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].forEach(p => {
+        if (!best[p.type] || p.conf > best[p.type].conf) best[p.type] = p;
+      });
+      const options = Object.values(best);
+      if (options.length) cands.push({ m, options });
+    });
+    // matches with the fewest options choose first, so flexible matches can balance things out
+    cands.sort((a, b) => a.options.length - b.options.length || new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
+    const counts = { '1X2': 0, 'BTTS': 0, 'OU': 0 };
+    const result = new Map();
+    cands.forEach(({ m, options }) => {
+      options.sort((a, b) => counts[a.type] - counts[b.type] || b.conf - a.conf);
+      result.set(m, options[0]);
+      counts[options[0].type]++;
+    });
+    return result;
+  }
+
   let allMatches = [];
 
   function renderTab(key) {
@@ -587,9 +610,10 @@
     }
 
     // One entry per match, so every match appears once under its date
+    const sure = key === 'sure' ? assignSurePicks(allMatches) : null;
     const entries = allMatches
       .filter(m => m.kickoff_time)
-      .map(m => ({ m, picks: TAB_PICKS[key](m) }))
+      .map(m => ({ m, picks: sure ? (sure.has(m) ? [sure.get(m)] : []) : TAB_PICKS[key](m) }))
       .filter(e => e.picks.length)
       .sort((a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
 
