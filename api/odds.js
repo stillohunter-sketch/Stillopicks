@@ -32,12 +32,18 @@ function sameTeam(a, b) {
   return short.length >= 3 && st.every(t => lt.some(u => u.startsWith(t)));
 }
 
+const apiKeyRe = /apiKey=[^&\s"]+/g;
+
 async function getJson(url) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
-    if (!r.ok) throw new Error('OddsPapi responded ' + r.status);
+    if (!r.ok) {
+      let detail = '';
+      try { detail = (await r.text()).replace(apiKeyRe, 'KEY').slice(0, 200); } catch (e) {}
+      throw new Error('OddsPapi responded ' + r.status + ' on ' + url.split('?')[0].split('/').pop() + ' ' + detail);
+    }
     return await r.json();
   } finally { clearTimeout(timer); }
 }
@@ -62,7 +68,7 @@ async function getOddsFor(key, tournamentIds) {
   const id = tournamentIds.slice().sort().join(',');
   const hit = cache.odds[id];
   if (hit && Date.now() - hit.at < ODDS_CACHE_MS) return hit;
-  const j = await getJson(`${BASE}/odds-by-tournaments?bookmaker=${encodeURIComponent(BOOKMAKER)}&tournamentIds=${id}&apiKey=${encodeURIComponent(key)}`);
+  const j = await getJson(`${BASE}/odds-by-tournaments?bookmakers=${encodeURIComponent(BOOKMAKER)}&tournamentIds=${id}&apiKey=${encodeURIComponent(key)}`);
   const byFixture = {};
   asArray(j).forEach(f => { byFixture[f.fixtureId] = f; });
   cache.odds[id] = { at: Date.now(), byFixture };
