@@ -80,7 +80,7 @@
   .league-block{ margin-top: 38px; }
   .league-head{
     display:flex;
-    align-items baseline;
+    align-items: baseline;
     justify-content: space-between;
     margin-bottom: 14px;
   }
@@ -108,7 +108,31 @@
   }
   .match.fav-strong{ border-left-color: var(--gold); }
   .match:nth-child(1){ animation-delay: 0.02s; }
-  .match:nth-child(2){ animation-delay: 0.10s; }
+  .match:nth-child(2){ animation-delay: 0.08s; }
+  .match:nth-child(3){ animation-delay: 0.14s; }
+  .match:nth-child(4){ animation-delay: 0.20s; }
+  .match:nth-child(5){ animation-delay: 0.26s; }
+  .group-head{
+    display:flex; align-items: baseline; justify-content: space-between;
+    margin: 34px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  .group-head h2{
+    font-family:'Oswald', sans-serif; font-size: 1.05rem; font-weight: 600; margin: 0; color: var(--gold);
+  }
+  .group-head span{ color: var(--text-muted); font-size: 0.8rem; }
+  .pick-card .teams{ margin-bottom: 10px; }
+  .pick-card .conf-row{
+    display:flex; align-items:center; justify-content: space-between; gap: 12px;
+    font-size: 0.85rem; padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  .pick-card .conf-row .pill{
+    font-weight: 600; color: var(--gold);
+  }
+  .pick-card .conf-bar{ flex:1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow:hidden; }
+  .pick-card .conf-bar div{ height:100%; background: var(--gold); }
+  .pick-card .score-big{
+    font-family:'Oswald', sans-serif; font-size: 1.3rem; color: var(--gold); font-weight: 600;
+  }
   @keyframes rise{ to{ opacity:1; transform: translateY(0); } }
 
   .match-top{
@@ -424,13 +448,117 @@
     return vals.length ? Math.max(...vals) : 0;
   }
 
-  const TABS = {
-    sure: { filter: m => marketConfidence(m) >= 60, sort: (a, b) => marketConfidence(b) - marketConfidence(a), empty: 'No high-confidence picks (60%+) right now — check back soon.' },
-    wdw: { filter: m => outcomeConfidence(m) >= 60, sort: (a, b) => outcomeConfidence(b) - outcomeConfidence(a), empty: 'No strong 1X2 picks (60%+) right now.' },
-    btts: { filter: m => bttsConfidence(m) >= 60, sort: (a, b) => bttsConfidence(b) - bttsConfidence(a), empty: 'No strong BTTS picks (60%+) right now.' },
-    ou: { filter: m => overUnderConfidence(m) >= 60, sort: (a, b) => overUnderConfidence(b) - overUnderConfidence(a), empty: 'No strong Over/Under picks (60%+) right now.' },
-    score: { filter: m => !!m.correct_score_pick, sort: (a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time), empty: 'No correct-score picks available right now.' },
+  // ---- Market tabs: each tab groups picks by the option itself ----
+  // picks(m) returns the list of qualifying { group, conf, label } entries for a match.
+  const MIN_CONF = 60;
+  const PER_GROUP = 5;
+
+  function twoWay(pct, yes, no) {
+    if (pct == null) return null;
+    const p = Number(pct);
+    return p >= 50 ? { side: yes, conf: p } : { side: no, conf: 100 - p };
+  }
+
+  const MARKETS = {
+    wdw: {
+      groups: ['Home wins', 'Draws', 'Away wins'],
+      empty: 'No strong 1X2 picks (60%+) right now.',
+      picks(m) {
+        const h = Number(m.home_win_pct) || 0, d = Number(m.draw_pct) || 0, a = Number(m.away_win_pct) || 0;
+        const max = Math.max(h, d, a);
+        if (max < MIN_CONF) return [];
+        if (max === h) return [{ group: 'Home wins', conf: h, label: m.home_team + ' to win' }];
+        if (max === a) return [{ group: 'Away wins', conf: a, label: m.away_team + ' to win' }];
+        return [{ group: 'Draws', conf: d, label: 'Draw' }];
+      }
+    },
+    btts: {
+      groups: ['BTTS: Yes', 'BTTS: No'],
+      empty: 'No strong BTTS picks (60%+) right now.',
+      picks(m) {
+        const r = twoWay(m.btts_pct, 'Yes', 'No');
+        if (!r || r.conf < MIN_CONF) return [];
+        return [{ group: 'BTTS: ' + r.side, conf: r.conf, label: 'Both teams to score: ' + r.side }];
+      }
+    },
+    ou: {
+      groups: ['Over 1.5', 'Over 2.5', 'Under 1.5', 'Under 2.5'],
+      empty: 'No strong Over/Under picks (60%+) right now.',
+      picks(m) {
+        const out = [];
+        [['1.5', m.over_1_5_pct], ['2.5', m.over_2_5_pct]].forEach(([line, pct]) => {
+          const r = twoWay(pct, 'Over', 'Under');
+          if (r && r.conf >= MIN_CONF) out.push({ group: `${r.side} ${line}`, conf: r.conf, label: `${r.side} ${line} goals` });
+        });
+        return out;
+      }
+    },
+    score: {
+      groups: null, // built dynamically: one group per scoreline, biggest group first
+      empty: 'No correct-score picks available right now.',
+      picks(m) {
+        return m.correct_score_pick ? [{ group: String(m.correct_score_pick).trim(), conf: null, label: m.correct_score_pick }] : [];
+      }
+    }
   };
+
+  function buildPickCard(m, p, isScore) {
+    const bottom = isScore
+      ? `<div class="conf-row"><span class="score-big">${escapeHtml(p.label)}</span><span style="color:var(--text-muted)">Predicted score</span></div>`
+      : `<div class="conf-row"><span class="pill">${escapeHtml(p.label)}</span><div class="conf-bar"><div style="width:${Math.round(p.conf)}%"></div></div><strong>${Math.round(p.conf)}%</strong></div>`;
+    return `
+      <div class="match pick-card fav-strong">
+        <div class="match-top"><span>${escapeHtml(formatKickoff(m.kickoff_time))}</span><span>${escapeHtml(m.league || '')}</span></div>
+        <div class="teams"><span>${escapeHtml(m.home_team)}</span><span class="vs">vs</span><span>${escapeHtml(m.away_team)}</span></div>
+        ${bottom}
+      </div>`;
+  }
+
+  function renderMarket(key, container) {
+    const market = MARKETS[key];
+    const isScore = key === 'score';
+    const buckets = {};
+    allMatches.forEach(m => {
+      market.picks(m).forEach(p => {
+        (buckets[p.group] = buckets[p.group] || []).push({ m, p });
+      });
+    });
+
+    let order = market.groups ? market.groups.filter(g => buckets[g]) : Object.keys(buckets).sort((a, b) => buckets[b].length - buckets[a].length);
+    if (!order.length) {
+      container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${market.empty}</p>`;
+      return;
+    }
+
+    container.innerHTML = order.map(g => {
+      const items = buckets[g].sort(isScore
+        ? (a, b) => new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time)
+        : (a, b) => b.p.conf - a.p.conf
+      ).slice(0, PER_GROUP);
+      return `
+        <div class="group-head"><h2>${escapeHtml(g)}</h2><span>${items.length} pick${items.length === 1 ? '' : 's'}</span></div>
+        ${items.map(({ m, p }) => buildPickCard(m, p, isScore)).join('')}`;
+    }).join('');
+  }
+
+  function renderSure(container) {
+    const matches = allMatches
+      .filter(m => marketConfidence(m) >= MIN_CONF)
+      .sort((a, b) => marketConfidence(b) - marketConfidence(a))
+      .slice(0, 5);
+    if (!matches.length) {
+      container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No high-confidence picks (60%+) right now — check back soon.</p>';
+      return;
+    }
+    const byLeague = {};
+    matches.forEach(m => { (byLeague[m.league] = byLeague[m.league] || []).push(m); });
+    container.innerHTML = Object.keys(byLeague).map(league => `
+      <div class="league-block">
+        <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
+        ${byLeague[league].map(buildMatchCard).join('')}
+      </div>
+    `).join('');
+  }
 
   let allMatches = [];
 
@@ -442,29 +570,11 @@
 
     if (key === 'accas' || key === 'news') {
       container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Coming soon — not built yet.</p>';
-      return;
+    } else if (key === 'sure') {
+      renderSure(container);
+    } else {
+      renderMarket(key, container);
     }
-
-    const tab = TABS[key];
-    const matches = allMatches.filter(tab.filter).sort(tab.sort).slice(0, 5);
-
-    if (!matches.length) {
-      container.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem;">${tab.empty}</p>`;
-      return;
-    }
-
-    const byLeague = {};
-    matches.forEach(m => {
-      if (!byLeague[m.league]) byLeague[m.league] = [];
-      byLeague[m.league].push(m);
-    });
-
-    container.innerHTML = Object.keys(byLeague).map(league => `
-      <div class="league-block">
-        <div class="league-head"><h2>${escapeHtml(league)}</h2></div>
-        ${byLeague[league].map(buildMatchCard).join('')}
-      </div>
-    `).join('');
   }
 
   async function loadMatches() {
