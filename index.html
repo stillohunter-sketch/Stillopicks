@@ -343,6 +343,7 @@
     padding: 4px 9px; font-size: 0.8rem; font-weight: 600; color: var(--gold); white-space: nowrap;
   }
   .pill em{ font-style: normal; font-weight: 500; font-size: 0.74rem; color: var(--text-muted); }
+  .pill .odd{ color: var(--text); font-weight: 600; font-size: 0.8rem; padding-left: 6px; border-left: 1px solid var(--gold-dim); }
   .pill.score{ font-family:'Oswald', sans-serif; font-size: 1rem; padding: 3px 12px; }
   footer{
     margin-top: 40px;
@@ -382,8 +383,8 @@
     </div>
   </div>
 
-  <footer>
-    Matches are pulled live from the Stillo database. Your call boxes aren't saved yet — that's next.
+  <footer id="footer-note">
+    Predictions come from the Stillo model. Odds can change quickly — always check with your bookmaker before placing anything.
   </footer>
 
 </div>
@@ -558,11 +559,31 @@
     return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
+  // ---- Live odds (fetched through /api/odds so the key stays private) ----
+  let oddsMap = {};
+  let currentTab = 'sure';
+
+  function matchKey(m) { return [m.home_team, m.away_team, m.kickoff_time].join('|'); }
+
+  const ODDS_FIELD = {
+    'Home win': 'home', 'Draw': 'draw', 'Away win': 'away',
+    'BTTS Yes': 'bttsYes', 'BTTS No': 'bttsNo',
+    'Over 1.5': 'over15', 'Under 1.5': 'under15',
+    'Over 2.5': 'over25', 'Under 2.5': 'under25'
+  };
+
+  function oddsFor(m, label) {
+    const o = oddsMap[matchKey(m)];
+    const f = ODDS_FIELD[label];
+    return o && f && o[f] ? o[f] : null;
+  }
+
   function buildRow(m, picks) {
-    const pills = picks.map(p => p.score
-      ? `<span class="pill score">${escapeHtml(p.label)}</span>`
-      : `<span class="pill">${escapeHtml(p.label)} <em>${Math.round(p.conf)}%</em></span>`
-    ).join('');
+    const pills = picks.map(p => {
+      if (p.score) return `<span class="pill score">${escapeHtml(p.label)}</span>`;
+      const odd = oddsFor(m, p.label);
+      return `<span class="pill">${escapeHtml(p.label)} <em>${Math.round(p.conf)}%</em>${odd ? `<span class="odd">@ ${odd.toFixed(2)}</span>` : ''}</span>`;
+    }).join('');
     return `
       <div class="row">
         <div class="row-left">
@@ -573,32 +594,25 @@
       </div>`;
   }
 
-  // Sure Bets: one market per match (60%+), spread across 1X2 / BTTS / Over-Under so the list isn't all overs.
-  function assignSurePicks(matches) {
-    const cands = [];
-    matches.filter(m => m.kickoff_time).forEach(m => {
-      const best = {}; // best qualifying pick per market type
-      [...pickers.outcome(m), ...pickers.btts(m), ...pickers.ou(m)].forEach(p => {
-        if (!best[p.type] || p.conf > best[p.type].conf) best[p.type] = p;
-      });
-      const options = Object.values(best);
-      if (options.length) cands.push({ m, options });
-    });
-    // matches with the fewest options choose first, so flexible matches can balance things out
-    cands.sort((a, b) => a.options.length - b.options.length || new Date(a.m.kickoff_time) - new Date(b.m.kickoff_time));
-    const counts = { '1X2': 0, 'BTTS': 0, 'OU': 0 };
-    const result = new Map();
-    cands.forEach(({ m, options }) => {
-      options.sort((a, b) => counts[a.type] - counts[b.type] || b.conf - a.conf);
-      result.set(m, options[0]);
-      counts[options[0].type]++;
-    });
-    return result;
+  async function loadOdds() {
+    try {
+      const res = await fetch('/api/odds');
+      const j = await res.json();
+      if (j.error) console.warn('Odds:', j.error);
+      oddsMap = j.odds || {};
+      const note = document.getElementById('footer-note');
+      if (note && Object.keys(oddsMap).length) {
+        const t = new Date(j.updatedAt || Date.now()).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+        note.textContent = `Odds from ${j.bookmaker}, updated ${t}. Odds can change quickly — always check with your bookmaker before placing anything.`;
+      }
+      renderTab(currentTab);
+    } catch (e) { console.warn('Odds unavailable', e); }
   }
 
   let allMatches = [];
 
   function renderTab(key) {
+    currentTab = key;
     const container = document.getElementById('matches-container');
     document.querySelectorAll('#tab-bar button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === key);
@@ -647,6 +661,8 @@
       if (!res.ok) throw new Error('Request failed: ' + res.status);
       allMatches = await res.json();
       renderTab('sure');
+      loadOdds();
+      setInterval(loadOdds, 10 * 60 * 1000);
     } catch (err) {
       container.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">Could not load matches right now. Check the database connection.</p>';
       console.error(err);
