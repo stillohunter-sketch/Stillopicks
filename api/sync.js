@@ -1,5 +1,5 @@
 // Vercel serverless function: /api/sync  (runs daily via Vercel Cron, or open it by hand)
-// 1. Gets upcoming fixtures from API-Football for the next 3 days.
+// 1. Gets upcoming fixtures from API-Football for today and tomorrow.
 // 2. Keeps only the leagues on the Stillo list.
 // 3. Rates each team's attack and defence against its league's average (Poisson model).
 // 4. Saves home/draw/away, BTTS, over 1.5/2.5 and the likeliest score into the Supabase "matches" table.
@@ -7,7 +7,7 @@
 
 const API = 'https://v3.football.api-sports.io';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cqvvomsmhtbymctlmamk.supabase.co';
-const DAYS_AHEAD = 3;          // today + next 2 days
+const DAYS_AHEAD = 2;          // today + tomorrow (the free API-Football plan only allows yesterday-today-tomorrow)
 const MAX_MS = 270000;         // stop before Vercel's time limit; unfinished leagues are picked up on the next run
 const SPARE_CALLS = 3;         // never use the last few calls of the daily allowance
 
@@ -125,7 +125,7 @@ const state = { calls: 0, minuteLeft: null, dayLeft: null, start: Date.now() };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const timeLeft = () => MAX_MS - (Date.now() - state.start);
 
-async function apiGet(path, params) {
+async function apiGet(path, params, retry) {
   if (state.minuteLeft !== null && state.minuteLeft <= 0) {
     if (timeLeft() < 70000) throw new Error('OUT_OF_TIME');
     await sleep(62000);
@@ -140,7 +140,14 @@ async function apiGet(path, params) {
   if (!r.ok) throw new Error(`API-Football responded ${r.status} on ${path}`);
   const j = await r.json();
   const errs = j.errors && (Array.isArray(j.errors) ? j.errors : Object.values(j.errors));
-  if (errs && errs.length) throw new Error('API-Football: ' + errs.join('; ').slice(0, 200));
+  if (errs && errs.length) {
+    const msg = errs.join('; ');
+    if (/rate|too many requests/i.test(msg) && !/access/i.test(msg) && (retry || 0) < 2 && timeLeft() > 70000) {
+      await sleep(62000);          // per-minute limit reached: wait a minute and try again
+      return apiGet(path, params, (retry || 0) + 1);
+    }
+    throw new Error('API-Football: ' + msg.slice(0, 200));
+  }
   return j.response || [];
 }
 
@@ -181,7 +188,12 @@ module.exports = async (req, res) => {
     let fixtures = [];
     for (let i = 0; i < DAYS_AHEAD; i++) {
       const date = new Date(Date.now() + i * 86400e3).toISOString().slice(0, 10);
-      fixtures = fixtures.concat(await apiGet('/fixtures', { date }));
+      try {
+        fixtures = fixtures.concat(await apiGet('/fixtures', { date }));
+      } catch (e) {
+        if (/do not have access to this date/i.test(e.message)) { (out.skippedDates = out.skippedDates || []).push(date); continue; }
+        throw e;
+      }
     }
     out.fixturesSeen = fixtures.length;
 
