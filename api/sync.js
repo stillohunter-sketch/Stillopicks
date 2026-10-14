@@ -231,16 +231,26 @@ module.exports = async (req, res) => {
       (groups[k] = groups[k] || { league: f.league, items: [] }).items.push(f);
     });
 
-    for (const g of Object.values(groups)) {
-      if (timeLeft() < 20000) { out.deferred += g.items.length; continue; }
+    const rank = g => g.league.country === 'World' ? 0 : (['England', 'Spain', 'Italy', 'Germany', 'France'].includes(g.league.country) ? 1 : 2);
+    const order = Object.values(groups).sort((a, b) =>
+      rank(a) - rank(b) || new Date(a.items[0].fixture.date) - new Date(b.items[0].fixture.date));
+    const CUP = /cup|shield|pokal|beker|coppa|copa|supercup|super cup|troph|ta.a|cupen|kupa/i;
+    out.insertedByLeague = {};
+    out.deferredLeagues = [];
+
+    for (let gi = 0; gi < order.length; gi++) {
+      const g = order[gi];
+      if (timeLeft() < 20000) { out.deferred += g.items.length; out.deferredLeagues.push(labelFor(g.league)); continue; }
       const rows = [];
       try {
         let L = null;
-        try {
-          const st = await apiGet('/standings', { league: g.league.id, season: g.league.season });
-          const table = st[0] && st[0].league && st[0].league.standings ? [].concat(...st[0].league.standings) : [];
-          L = table.length ? leagueModel(table) : null;
-        } catch (e) { if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e; }
+        if (!CUP.test(g.league.name) || /uefa|world cup|club world/i.test(g.league.name)) { // plain cups have no table: skip the wasted call
+          try {
+            const st = await apiGet('/standings', { league: g.league.id, season: g.league.season });
+            const table = st[0] && st[0].league && st[0].league.standings ? [].concat(...st[0].league.standings) : [];
+            L = table.length ? leagueModel(table) : null;
+          } catch (e) { if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e; }
+        }
 
         for (const f of g.items) {
           let xg = L ? expectedGoals(L, f.teams.home.id, f.teams.away.id) : null;
@@ -261,11 +271,19 @@ module.exports = async (req, res) => {
           });
         }
       } catch (e) {
-        if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) { out.deferred += g.items.length - rows.length; await insertRows(rows); out.inserted += rows.length; out.stoppedEarly = e.message; break; }
+        if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) {
+          await insertRows(rows); out.inserted += rows.length;
+          out.deferred += g.items.length - rows.length;
+          order.slice(gi).forEach(x => out.deferredLeagues.push(labelFor(x.league)));
+          order.slice(gi + 1).forEach(x => { out.deferred += x.items.length; });
+          out.stoppedEarly = e.message;
+          break;
+        }
         throw e;
       }
       await insertRows(rows);
       out.inserted += rows.length;
+      if (rows.length) out.insertedByLeague[labelFor(g.league)] = rows.length;
     }
   } catch (err) {
     out.error = String((err && err.message) || err);
