@@ -181,6 +181,9 @@ module.exports = async (req, res) => {
     return res.status(200).json({ error: 'API_FOOTBALL_KEY or SUPABASE_SERVICE_KEY is missing in Vercel' });
   }
 
+  // Vercel reuses a warm instance for several runs: start every run with a fresh clock and counters
+  state.calls = 0; state.minuteLeft = null; state.dayLeft = null; state.start = Date.now();
+
   const dry = !!(req.query && req.query.dry);
   const out = { dry, inserted: 0, deferred: 0 };
   try {
