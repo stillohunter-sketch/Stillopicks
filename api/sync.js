@@ -240,6 +240,8 @@ module.exports = async (req, res) => {
     const CUP = /cup|shield|pokal|beker|coppa|copa|supercup|super cup|troph|ta.a|cupen|kupa/i;
     out.insertedByLeague = {};
     out.deferredLeagues = [];
+    out.notes = [];
+    const note = t => { if (out.notes.length < 30) out.notes.push(t); };
 
     for (let gi = 0; gi < order.length; gi++) {
       const g = order[gi];
@@ -252,7 +254,8 @@ module.exports = async (req, res) => {
             const st = await apiGet('/standings', { league: g.league.id, season: g.league.season });
             const table = st[0] && st[0].league && st[0].league.standings ? [].concat(...st[0].league.standings) : [];
             L = table.length ? leagueModel(table) : null;
-          } catch (e) { if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e; }
+          } catch (e) { if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e; note(labelFor(g.league) + ' standings: ' + e.message); }
+          if (!L) note(labelFor(g.league) + ': no usable table, using team averages');
         }
 
         for (const f of g.items) {
@@ -262,9 +265,11 @@ module.exports = async (req, res) => {
             const p = await apiGet('/predictions', { fixture: f.fixture.id });
             const T = p[0] && p[0].teams;
             const n = x => Number(x);
-            const hFor = T && n(T.home.league.goals.for.average.home), hAg = T && n(T.home.league.goals.against.average.home);
-            const aFor = T && n(T.away.league.goals.for.average.away), aAg = T && n(T.away.league.goals.against.average.away);
-            if ([hFor, hAg, aFor, aAg].some(x => !isFinite(x) || x <= 0)) { out.deferred++; continue; }
+            const val = (x, d) => (isFinite(x) && x > 0 ? x : d);
+            const raw = T ? [n(T.home.league.goals.for.average.home), n(T.home.league.goals.against.average.home),
+                             n(T.away.league.goals.for.average.away), n(T.away.league.goals.against.average.away)] : [];
+            if (!raw.some(x => isFinite(x) && x > 0)) { out.deferred++; note(`${f.teams.home.name} v ${f.teams.away.name}: no team stats from API`); continue; }
+            const hFor = val(raw[0], 1.4), hAg = val(raw[1], 1.2), aFor = val(raw[2], 1.2), aAg = val(raw[3], 1.4);
             xg = { lh: (hFor + aAg) / 2 * 1.05, la: (aFor + hAg) / 2 * 0.95 };
           }
           rows.push({
