@@ -121,7 +121,7 @@ function expectedGoals(L, homeId, awayId) {
 }
 
 // ---- API-Football calls (paced by the rate-limit headers) ----
-const state = { calls: 0, minuteLeft: null, dayLeft: null, start: Date.now() };
+const state = { calls: 0, minuteLeft: null, dayLeft: null, start: Date.now(), noStandings: false };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const timeLeft = () => MAX_MS - (Date.now() - state.start);
 
@@ -182,7 +182,7 @@ module.exports = async (req, res) => {
   }
 
   // Vercel reuses a warm instance for several runs: start every run with a fresh clock and counters
-  state.calls = 0; state.minuteLeft = null; state.dayLeft = null; state.start = Date.now();
+  state.calls = 0; state.minuteLeft = null; state.dayLeft = null; state.start = Date.now(); state.noStandings = false;
 
   const dry = !!(req.query && req.query.dry);
   const out = { dry, inserted: 0, deferred: 0 };
@@ -249,13 +249,16 @@ module.exports = async (req, res) => {
       const rows = [];
       try {
         let L = null;
-        if (!CUP.test(g.league.name) || /uefa|world cup|club world/i.test(g.league.name)) { // plain cups have no table: skip the wasted call
+        if (!state.noStandings && (!CUP.test(g.league.name) || /uefa|world cup|club world/i.test(g.league.name))) { // plain cups have no table: skip the wasted call
           try {
             const st = await apiGet('/standings', { league: g.league.id, season: g.league.season });
             const table = st[0] && st[0].league && st[0].league.standings ? [].concat(...st[0].league.standings) : [];
             L = table.length ? leagueModel(table) : null;
-          } catch (e) { if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e; note(labelFor(g.league) + ' standings: ' + e.message); }
-          if (!L) note(labelFor(g.league) + ': no usable table, using team averages');
+          } catch (e) {
+            if (['OUT_OF_TIME', 'OUT_OF_CALLS'].includes(e.message)) throw e;
+            if (/access to this season/i.test(e.message)) { state.noStandings = true; note('Free plan cannot read current-season tables: using per-match team stats instead'); }
+            else note(labelFor(g.league) + ' standings: ' + e.message);
+          }
         }
 
         for (const f of g.items) {
@@ -265,11 +268,16 @@ module.exports = async (req, res) => {
             const p = await apiGet('/predictions', { fixture: f.fixture.id });
             const T = p[0] && p[0].teams;
             const n = x => Number(x);
-            const val = (x, d) => (isFinite(x) && x > 0 ? x : d);
-            const raw = T ? [n(T.home.league.goals.for.average.home), n(T.home.league.goals.against.average.home),
-                             n(T.away.league.goals.for.average.away), n(T.away.league.goals.against.average.away)] : [];
-            if (!raw.some(x => isFinite(x) && x > 0)) { out.deferred++; note(`${f.teams.home.name} v ${f.teams.away.name}: no team stats from API`); continue; }
-            const hFor = val(raw[0], 1.4), hAg = val(raw[1], 1.2), aFor = val(raw[2], 1.2), aAg = val(raw[3], 1.4);
+            const at = (o, path) => path.reduce((a, k) => (a && a[k] !== undefined ? a[k] : undefined), o);
+            const num = x => { const v = Number(x); return isFinite(v) && v > 0 ? v : null; };
+            const first = (...xs) => { const r = xs.find(x => x !== null); return r === undefined ? null : r; };
+            const hFor0 = first(num(at(T, ['home', 'league', 'goals', 'for', 'average', 'home'])), num(at(T, ['home', 'last_5', 'goals', 'for', 'average'])));
+            const hAg0 = first(num(at(T, ['home', 'league', 'goals', 'against', 'average', 'home'])), num(at(T, ['home', 'last_5', 'goals', 'against', 'average'])));
+            const aFor0 = first(num(at(T, ['away', 'league', 'goals', 'for', 'average', 'away'])), num(at(T, ['away', 'last_5', 'goals', 'for', 'average'])));
+            const aAg0 = first(num(at(T, ['away', 'league', 'goals', 'against', 'average', 'away'])), num(at(T, ['away', 'last_5', 'goals', 'against', 'average'])));
+            if ([hFor0, hAg0, aFor0, aAg0].every(x => x === null)) { out.deferred++; note(`${f.teams.home.name} v ${f.teams.away.name}: no team stats from API`); continue; }
+            const hFor = hFor0 === null ? 1.4 : hFor0, hAg = hAg0 === null ? 1.2 : hAg0;
+            const aFor = aFor0 === null ? 1.2 : aFor0, aAg = aAg0 === null ? 1.4 : aAg0;
             xg = { lh: (hFor + aAg) / 2 * 1.05, la: (aFor + hAg) / 2 * 0.95 };
           }
           rows.push({
